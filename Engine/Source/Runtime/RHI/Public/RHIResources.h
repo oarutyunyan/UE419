@@ -291,6 +291,8 @@ public:
 	: Layout(&InLayout)
 	{}
 
+	virtual class FRHIUniformBuffer* GetUniformBuffer() { return this; }
+
 	/** @return The number of bytes in the uniform buffer. */
 	uint32 GetSize() const { return Layout->ConstantBufferSize; }
 	const FRHIUniformBufferLayout& GetLayout() const { return *Layout; }

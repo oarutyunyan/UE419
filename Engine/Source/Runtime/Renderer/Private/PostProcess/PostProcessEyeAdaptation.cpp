@@ -158,6 +158,9 @@ public:
 		const FPixelShaderRHIParamRef ShaderRHI = GetPixelShader();
 
 		FGlobalShader::SetParameters<FViewUniformShaderParameters>(RHICmdList, ShaderRHI, Context.View.ViewUniformBuffer);
+		// #nv begin DLAA
+		RHIBindDebugLabelName(Context.View.ViewUniformBuffer, TEXT("NvDLAAConstBuffer"));
+		// #nv end DLAA
 
 		PostprocessParameter.SetPS(RHICmdList, ShaderRHI, Context, TStaticSamplerState<SF_Bilinear,AM_Clamp,AM_Clamp,AM_Clamp>::GetRHI());
 
@@ -229,6 +232,9 @@ public:
 
 		// CS params
 		FGlobalShader::SetParameters<FViewUniformShaderParameters>(RHICmdList, ShaderRHI, Context.View.ViewUniformBuffer);
+		// #nv begin DLAA
+		RHIBindDebugLabelName(Context.View.ViewUniformBuffer, TEXT("NvDLAAConstBuffer"));
+		// #nv end DLAA
 		PostprocessParameter.SetCS(ShaderRHI, Context, RHICmdList, TStaticSamplerState<SF_Bilinear,AM_Clamp,AM_Clamp,AM_Clamp>::GetRHI());
 		OutComputeTex.SetTexture(RHICmdList, ShaderRHI, nullptr, DestUAV);		
 		
@@ -478,6 +484,9 @@ public:
 		const FPixelShaderRHIParamRef ShaderRHI = GetPixelShader();
 
 		FGlobalShader::SetParameters<FViewUniformShaderParameters>(Context.RHICmdList, ShaderRHI, Context.View.ViewUniformBuffer);
+		// #nv begin DLAA
+		RHIBindDebugLabelName(Context.View.ViewUniformBuffer, TEXT("NvDLAAConstBuffer"));
+		// #nv end DLAA
 		PostprocessParameter.SetPS(Context.RHICmdList, ShaderRHI, Context, TStaticSamplerState<SF_Point, AM_Clamp, AM_Clamp, AM_Clamp>::GetRHI());
 
 		{
@@ -621,6 +630,9 @@ public:
 		const FPixelShaderRHIParamRef ShaderRHI = GetPixelShader();
 
 		FGlobalShader::SetParameters<FViewUniformShaderParameters>(Context.RHICmdList, ShaderRHI, Context.View.ViewUniformBuffer);
+		// #nv begin DLAA
+		RHIBindDebugLabelName(Context.View.ViewUniformBuffer, TEXT("NvDLAAConstBuffer"));
+		// #nv end DLAA
 
 		PostprocessParameter.SetPS(Context.RHICmdList, ShaderRHI, Context, TStaticSamplerState<SF_Bilinear, AM_Clamp, AM_Clamp, AM_Clamp>::GetRHI());
 

@@ -1,0 +1,57 @@
+
+#include "Common.ush"
+
+Texture2D DepthTexture;
+Texture2D VelocityTexture;
+
+float2 UVToClip(float2 UV)
+{
+	return float2(UV.x * 2 - 1, 1 - UV.y * 2);
+}
+
+float2 ClipToUV(float2 ClipPos)
+{
+	return float2(ClipPos.x * 0.5 + 0.5, 0.5 - ClipPos.y * 0.5);
+}
+
+
+float3 HomogenousToEuclidean(float4 V)
+{
+	return V.xyz / V.w;
+}
+
+void VelocityResolvePixelShader(
+	float2 InUV : TEXCOORD0,
+	float4 SvPosition : SV_Position,
+	out float4 OutColor : SV_Target0
+)
+{
+	OutColor = 0;
+
+	float2 Velocity = VelocityTexture[SvPosition.xy].xy;
+	float Depth = DepthTexture[SvPosition.xy].x;
+
+	if (all(Velocity.xy > 0))
+	{
+		Velocity = DecodeVelocityFromTexture(Velocity);
+	}
+	else
+	{
+		float4 ClipPos;
+		ClipPos.xy = SvPositionToScreenPosition(float4(SvPosition.xyz, 1)).xy;
+		ClipPos.z = Depth;
+		ClipPos.w = 1;
+
+		float4 PrevClipPos = mul(ClipPos, View.ClipToPrevClip);
+
+		if (PrevClipPos.w > 0)
+		{
+			float2 PrevClip = HomogenousToEuclidean(PrevClipPos).xy;
+			Velocity = ClipPos.xy - PrevClip.xy;
+		}
+	}
+
+	OutColor.xy = Velocity * float2(0.5, -0.5) * View.ViewSizeAndInvSize.xy;
+
+	OutColor.xy = -OutColor.xy;
+}

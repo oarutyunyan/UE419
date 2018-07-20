@@ -14,6 +14,10 @@
 #include "ClearQuad.h"
 #include "PipelineStateCache.h"
 
+// #nv begin DLAA
+#include "DLAAParameters.h"
+// #nv end DLAA
+
 static TAutoConsoleVariable<float> CVarTonemapperSharpen(
 	TEXT("r.Tonemapper.Sharpen"),
 	0,
@@ -580,10 +584,16 @@ static uint32 TonemapperGenerateBitmask(const FViewInfo* RESTRICT View, bool bGa
 	float Sharpen = CVarTonemapperSharpen.GetValueOnRenderThread();
 
 	Bitmask += (Settings->FilmShadowTintAmount > 0.0f) ? TonemapperShadowTint     : 0;	
-	Bitmask += (Settings->FilmContrast > 0.0f)         ? TonemapperContrast       : 0;
-	Bitmask += (Settings->GrainIntensity > 0.0f)       ? TonemapperGrainIntensity : 0;
-	Bitmask += (Settings->VignetteIntensity > 0.0f)    ? TonemapperVignette       : 0;
-	Bitmask += (Sharpen > 0.0f)                        ? TonemapperSharpen        : 0;
+	Bitmask += (Settings->FilmContrast > 0.0f)         ? TonemapperContrast       : 0;	
+	Bitmask += (Settings->VignetteIntensity > 0.0f)    ? TonemapperVignette       : 0;	
+
+	// #nv begin DLAA
+	if (!View->Family->DLAAParameters->bDisablePostEffectsForDLAA)
+	{
+		Bitmask += (Settings->GrainIntensity > 0.0f) ? TonemapperGrainIntensity : 0;
+		Bitmask += (Sharpen > 0.0f) ? TonemapperSharpen : 0;
+	}
+	// #nv end DLAA
 
 	return Bitmask;
 }
@@ -595,9 +605,15 @@ static uint32 TonemapperGenerateBitmaskPost(const FViewInfo* RESTRICT View)
 	const FPostProcessSettings* RESTRICT Settings = &(View->FinalPostProcessSettings);
 	const FSceneViewFamily* RESTRICT Family = View->Family;
 
-	uint32 Bitmask = (Settings->GrainJitter > 0.0f) ? TonemapperGrainJitter : 0;
+	// #nv begin DLAA
+	uint32 Bitmask = 0;
+	if (!View->Family->DLAAParameters->bDisablePostEffectsForDLAA)
+	{
+		Bitmask += (Settings->GrainJitter > 0.0f) ? TonemapperGrainJitter : 0;
 
-	Bitmask += (Settings->BloomIntensity > 0.0f) ? TonemapperBloom : 0;
+		Bitmask += (Settings->BloomIntensity > 0.0f) ? TonemapperBloom : 0;
+	}
+	// #nv end DLAA
 
 	return Bitmask;
 }
@@ -618,21 +634,26 @@ static uint32 TonemapperGenerateBitmaskPC(const FViewInfo* RESTRICT View, bool b
 		return Bitmask;
 	}
 
-	// Grain Quantization
+	// #nv begin DLAA
+	if (!View->Family->DLAAParameters->bDisablePostEffectsForDLAA)
 	{
-		static TConsoleVariableData<int32>* CVar = IConsoleManager::Get().FindTConsoleVariableDataInt(TEXT("r.Tonemapper.GrainQuantization"));
-		int32 Value = CVar->GetValueOnRenderThread();
-
-		if(Value > 0)
+		// Grain Quantization
 		{
-			Bitmask |= TonemapperGrainQuantization;
+			static TConsoleVariableData<int32>* CVar = IConsoleManager::Get().FindTConsoleVariableDataInt(TEXT("r.Tonemapper.GrainQuantization"));
+			int32 Value = CVar->GetValueOnRenderThread();
+
+			if (Value > 0)
+			{
+				Bitmask |= TonemapperGrainQuantization;
+			}
+		}
+
+		if (View->FinalPostProcessSettings.SceneFringeIntensity > 0.01f)
+		{
+			Bitmask |= TonemapperColorFringe;
 		}
 	}
-
-	if( View->FinalPostProcessSettings.SceneFringeIntensity > 0.01f)
-	{
-		Bitmask |= TonemapperColorFringe;
-	}
+	// #nv end DLAA
 
 	return Bitmask + TonemapperGenerateBitmaskPost(View);
 }
@@ -940,8 +961,10 @@ public:
 			SetShaderValue(RHICmdList, ShaderRHI, ColorScale0, ColorScale);
 		}
 		
-		{
-			FLinearColor Col = FLinearColor::White * Settings.BloomIntensity;
+		{			
+			// #nv begin DLAA
+			FLinearColor Col = FLinearColor::White * (ViewFamily.DLAAParameters->bDisablePostEffectsForDLAA ? 0.f : Settings.BloomIntensity);
+			// #nv end DLAA
 			FVector4 ColorScale(Col.R, Col.G, Col.B, 0);
 			SetShaderValue(RHICmdList, ShaderRHI, ColorScale1, ColorScale);
 		}
@@ -1262,6 +1285,9 @@ public:
 		const FPixelShaderRHIParamRef ShaderRHI = GetPixelShader();
 		
 		FGlobalShader::SetParameters<FViewUniformShaderParameters>(Context.RHICmdList, ShaderRHI, Context.View.ViewUniformBuffer);
+		// #nv begin DLAA
+		RHIBindDebugLabelName(Context.View.ViewUniformBuffer, TEXT("NvDLAAConstBuffer"));
+		// #nv end DLAA
 
 		{
 			// filtering can cost performance so we use point where possible, we don't want anisotropic sampling
@@ -1383,6 +1409,9 @@ public:
 
 		// CS params
 		FGlobalShader::SetParameters<FViewUniformShaderParameters>(RHICmdList, ShaderRHI, Context.View.ViewUniformBuffer);
+		// #nv begin DLAA
+		RHIBindDebugLabelName(Context.View.ViewUniformBuffer, TEXT("NvDLAAConstBuffer"));
+		// #nv end DLAA
 		OutComputeTex.SetTexture(RHICmdList, ShaderRHI, nullptr, DestUAV);		
 		
 		FVector4 TonemapComputeValues(0, 0, 1.f / (float)DestSize.X, 1.f / (float)DestSize.Y);

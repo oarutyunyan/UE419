@@ -678,6 +678,8 @@ public:
 
 	virtual ~FD3D11UniformBuffer();
 
+	TRefCountPtr<ID3D11Buffer> GetResource() const { return Resource; }
+
 private:
 	class FD3D11DynamicRHI* D3D11RHI;
 };

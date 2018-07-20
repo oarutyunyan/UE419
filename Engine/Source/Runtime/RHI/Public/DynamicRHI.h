@@ -659,6 +659,7 @@ public:
 	// FlushType: Thread safe
 	virtual void RHIBindDebugLabelName(FTextureRHIParamRef Texture, const TCHAR* Name) = 0;
 	virtual void RHIBindDebugLabelName(FUnorderedAccessViewRHIParamRef UnorderedAccessViewRHI, const TCHAR* Name) {}
+	virtual void RHIBindDebugLabelName(FUniformBufferRHIParamRef UniformBuffer, const TCHAR* Name) {}
 
 	/**
 	* Reads the contents of a texture to an output buffer (non MSAA and MSAA) and returns it as a FColor array.
@@ -1017,6 +1018,11 @@ FORCEINLINE void RHIBindDebugLabelName(FTextureRHIParamRef Texture, const TCHAR*
 FORCEINLINE void RHIBindDebugLabelName(FUnorderedAccessViewRHIParamRef UnorderedAccessViewRHI, const TCHAR* Name)
 {
 	GDynamicRHI->RHIBindDebugLabelName(UnorderedAccessViewRHI, Name);
+}
+
+FORCEINLINE void RHIBindDebugLabelName(FUniformBufferRHIParamRef UniformBuffer, const TCHAR* Name)
+{
+	GDynamicRHI->RHIBindDebugLabelName(UniformBuffer, Name);
 }
 
 FORCEINLINE bool RHIGetRenderQueryResult(FRenderQueryRHIParamRef RenderQuery, uint64& OutResult, bool bWait)

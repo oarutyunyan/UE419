@@ -18,6 +18,10 @@
 #include "DebugViewModeHelpers.h"
 #include "RendererInterface.h"
 
+// #nv begin DLAA
+#include "DLAAParameters.h"
+// #nv end DLAA
+
 class FForwardLightingViewResources;
 class FSceneView;
 class FSceneViewFamily;
@@ -1530,6 +1534,10 @@ public:
 	 */
 	bool bNullifyWorldSpacePosition;
 #endif
+
+	// #nv begin DLAA
+	TSharedPtr<FDLAAParameters, ESPMode::ThreadSafe> DLAAParameters;
+	// #nv end DLAA
 
 	/** Initialization constructor. */
 	FSceneViewFamily( const ConstructionValues& CVS );

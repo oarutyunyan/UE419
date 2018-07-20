@@ -26,6 +26,10 @@
 #include "ClearQuad.h"
 #include "RendererModule.h"
 
+// #nv begin DLAA
+#include "DLAAParameters.h"
+// #nv end DLAA
+
 TAutoConsoleVariable<int32> CVarEarlyZPass(
 	TEXT("r.EarlyZPass"),
 	3,	
@@ -544,6 +548,11 @@ void FDeferredShadingSceneRenderer::Render(FRHICommandListImmediate& RHICmdList)
 	PrepareViewRectsForRendering();
 
 	SCOPED_NAMED_EVENT(FDeferredShadingSceneRenderer_Render, FColor::Emerald);
+
+	// #nv begin DLAA
+	if (!ViewFamily.DLAAParameters.IsValid())
+		ViewFamily.DLAAParameters = TSharedPtr<FDLAAParameters, ESPMode::ThreadSafe>(new FDLAAParameters());
+	// #nv end DLAA
 
 	FSceneRenderTargets& SceneContext = FSceneRenderTargets::Get(RHICmdList);
 	
@@ -1369,6 +1378,13 @@ void FDeferredShadingSceneRenderer::Render(FRHICommandListImmediate& RHICmdList)
 		ServiceLocalQueue();
 	}
 
+	// #nv begin DLAA
+#ifdef DLAA	
+	// NvDLAAHDRFrame capture
+	ResolveDLAAFrame(RHICmdList, SceneContext.GetSceneColor(), ViewFamily.DLAAParameters->DLAAHDRFrameRT, true);
+#endif
+	// #nv end DLAA	
+
 	// Resolve the scene color for post processing.
 	ResolveSceneColor(RHICmdList);
 
@@ -1404,6 +1420,13 @@ void FDeferredShadingSceneRenderer::Render(FRHICommandListImmediate& RHICmdList)
 		SceneContext.AdjustGBufferRefCount(RHICmdList, -1);
 	}
 
+#ifdef DLAA
+	if (ShouldRenderVelocities())
+	{
+		ResolveVelocity(RHICmdList, VelocityRT, ViewFamily.DLAAParameters->DLAAVelocityRT);
+	}
+#endif
+
 	//grab the new transform out of the proxies for next frame
 	if (VelocityRT)
 	{
@@ -1417,6 +1440,14 @@ void FDeferredShadingSceneRenderer::Render(FRHICommandListImmediate& RHICmdList)
 		RHICmdList.SetCurrentStat(GET_STATID(STAT_CLM_AfterFrame));
 	}
 	ServiceLocalQueue();
+
+
+	// #nv begin DLAA
+#ifdef DLAA	
+	// NvDLAALDRFrame capture
+	ResolveDLAAFrame(RHICmdList, ViewFamily.DLAAParameters->DLAATempRT, ViewFamily.DLAAParameters->DLAALDRFrameRT, false);
+#endif
+	// #nv end DLAA	
 }
 
 /** A simple pixel shader used on PC to read scene depth from scene color alpha and write it to a downsized depth buffer. */
@@ -1662,3 +1693,115 @@ void FDeferredShadingSceneRenderer::CopyStencilToLightingChannelTexture(FRHIComm
 			ResolveParams);
 	}
 }
+
+// #nv begin DLAA
+class FDLAACopyTexturePS : public FGlobalShader
+{
+	DECLARE_SHADER_TYPE(FDLAACopyTexturePS, Global);
+public:
+
+	static bool ShouldCompilePermutation(const FGlobalShaderPermutationParameters& Parameters)
+	{
+		return IsFeatureLevelSupported(Parameters.Platform, ERHIFeatureLevel::SM5);
+	}
+
+	FDLAACopyTexturePS(const ShaderMetaType::CompiledShaderInitializerType& Initializer) :
+		FGlobalShader(Initializer)
+	{
+		InTexture.Bind(Initializer.ParameterMap, TEXT("InTexture"));
+		InTextureSampler.Bind(Initializer.ParameterMap, TEXT("InTextureSampler"));
+		Gamma.Bind(Initializer.ParameterMap, TEXT("Gamma"));
+	}
+	FDLAACopyTexturePS() {}
+
+	void SetParameters(FRHICommandList& RHICmdList, const FTexture* Texture, float gamma)
+	{
+		SetTextureParameter(RHICmdList, GetPixelShader(), InTexture, InTextureSampler, Texture);
+		SetShaderValue(RHICmdList, GetPixelShader(), Gamma, gamma);
+	}
+
+	void SetParameters(FRHICommandList& RHICmdList, FSamplerStateRHIParamRef SamplerStateRHI, FTextureRHIParamRef TextureRHI, float gamma)
+	{
+		SetTextureParameter(RHICmdList, GetPixelShader(), InTexture, InTextureSampler, SamplerStateRHI, TextureRHI);
+		SetShaderValue(RHICmdList, GetPixelShader(), Gamma, gamma);
+	}
+
+	virtual bool Serialize(FArchive& Ar) override
+	{
+		bool bShaderHasOutdatedParameters = FGlobalShader::Serialize(Ar);
+		
+		Ar << InTexture;
+		Ar << InTextureSampler;
+		Ar << Gamma;
+
+		return bShaderHasOutdatedParameters;
+	}
+
+	FShaderResourceParameter InTexture;
+	FShaderResourceParameter InTextureSampler;
+	FShaderParameter Gamma;
+};
+
+IMPLEMENT_SHADER_TYPE(, FDLAACopyTexturePS, TEXT("/Engine/Private/DLAACopyTexture.usf"), TEXT("DLAACopyTexturePixelShader"), SF_Pixel);
+
+void FDeferredShadingSceneRenderer::ResolveDLAAFrame(FRHICommandListImmediate& RHICmdList, IPooledRenderTarget* InputRT, TRefCountPtr<IPooledRenderTarget>& OutputTarget, bool isHDR)
+{
+	if (!InputRT)
+		return;
+	
+	RHICmdList.TransitionResource(EResourceTransitionAccess::EReadable, InputRT->GetRenderTargetItem().ShaderResourceTexture);
+
+	FPooledRenderTargetDesc Desc = InputRT->GetDesc();	
+
+	if (isHDR)
+	{
+		Desc.Format = PF_A32B32G32R32F;
+		SCOPED_DRAW_EVENT(RHICmdList, NvDLAAHDRFrameReady);
+		GRenderTargetPool.FindFreeElement(RHICmdList, Desc, OutputTarget, TEXT("NvDLAAHDRFrame"));
+	}		
+	else
+	{
+		Desc.Format = PF_FloatRGBA;
+		SCOPED_DRAW_EVENT(RHICmdList, NvDLAALDRFrameReady);
+		GRenderTargetPool.FindFreeElement(RHICmdList, Desc, OutputTarget, TEXT("NvDLAALDRFrame"));
+	}	
+
+	SetRenderTarget(RHICmdList, OutputTarget->GetRenderTargetItem().TargetableTexture, nullptr, ESimpleRenderTargetMode::EClearColorAndDepth);
+
+	FGraphicsPipelineStateInitializer GraphicsPSOInit;
+	RHICmdList.ApplyCachedRenderTargets(GraphicsPSOInit);
+	GraphicsPSOInit.BlendState = TStaticBlendState<CW_RGBA, BO_Add, BF_One, BF_Zero, BO_Add, BF_One, BF_Zero>::GetRHI();
+	GraphicsPSOInit.RasterizerState = TStaticRasterizerState<>::GetRHI();
+	GraphicsPSOInit.DepthStencilState = TStaticDepthStencilState<false, CF_Always>::GetRHI();
+
+	extern TGlobalResource<FFilterVertexDeclaration> GFilterVertexDeclaration;
+	GraphicsPSOInit.BoundShaderState.VertexDeclarationRHI = GFilterVertexDeclaration.VertexDeclarationRHI;
+
+	auto ShaderMap = GetGlobalShaderMap(FeatureLevel);
+	TShaderMapRef<FScreenVS> VertexShader(ShaderMap);
+	TShaderMapRef<FDLAACopyTexturePS> PixelShader(ShaderMap);
+
+	//GraphicsPSOInit.BoundShaderState.VertexDeclarationRHI = GFilterVertexDeclaration.VertexDeclarationRHI;
+	GraphicsPSOInit.BoundShaderState.VertexShaderRHI = GETSAFERHISHADER_VERTEX(*VertexShader);
+	GraphicsPSOInit.BoundShaderState.PixelShaderRHI = GETSAFERHISHADER_PIXEL(*PixelShader);
+	GraphicsPSOInit.PrimitiveType = PT_TriangleList;
+
+	SetGraphicsPipelineState(RHICmdList, GraphicsPSOInit);
+	
+	PixelShader->SetParameters(RHICmdList, TStaticSamplerState<SF_Point>::GetRHI(), InputRT->GetRenderTargetItem().ShaderResourceTexture, 1.0);
+
+	const uint32 ViewportWidth = InputRT->GetRenderTargetItem().ShaderResourceTexture->GetTexture2D()->GetSizeX();
+	const uint32 ViewportHeight = InputRT->GetRenderTargetItem().ShaderResourceTexture->GetTexture2D()->GetSizeY();
+	const FIntPoint TargetSize(ViewportWidth, ViewportHeight);
+
+	RHICmdList.SetViewport(0, 0, 0.0f, ViewportWidth, ViewportHeight, 1.0f);
+
+	DrawRectangle(RHICmdList,
+		0.0f, 0.0f, ViewportWidth, ViewportHeight,
+		0.0f, 0.0f, 1.0f, 1.0f,
+		TargetSize,
+		FIntPoint(1, 1),
+		*VertexShader,
+		EDRF_UseTriangleOptimization);
+}
+// #nv end DLAA

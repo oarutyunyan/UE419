@@ -1674,6 +1674,14 @@ void FD3D11DynamicRHI::RHIBindDebugLabelName(FTextureRHIParamRef TextureRHI, con
 #endif
 }
 
+void FD3D11DynamicRHI::RHIBindDebugLabelName(FUniformBufferRHIParamRef UniformBufferRHI, const TCHAR* Name)
+{
+	//#if UE_BUILD_DEBUG || UE_BUILD_DEVELOPMENT
+	FD3D11UniformBuffer* UniformBuffer = (FD3D11UniformBuffer*)UniformBufferRHI->GetUniformBuffer();
+	UniformBuffer->GetResource()->SetPrivateData(WKPDID_D3DDebugObjectName, FCString::Strlen(Name) + 1, TCHAR_TO_ANSI(Name));
+	//#endif
+}
+
 void FD3D11DynamicRHI::RHIVirtualTextureSetFirstMipInMemory(FTexture2DRHIParamRef TextureRHI, uint32 FirstMip)
 {
 }

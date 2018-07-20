@@ -19,6 +19,10 @@
 #include "PostProcess/ScreenSpaceReflections.h"
 #include "UnrealEngine.h"
 
+// #nv begin DLAA
+#include "PostProcess/SceneFilterRendering.h"
+// #nv end DLAA
+
 // Changing this causes a full shader recompile
 static TAutoConsoleVariable<int32> CVarBasePassOutputsVelocity(
 	TEXT("r.BasePassOutputsVelocity"),
@@ -960,3 +964,104 @@ bool FVelocityRendering::OutputsOnlyToGBuffer(bool bSupportsStaticLighting)
 	return CVarBasePassOutputsVelocity.GetValueOnAnyThread() == 1 &&
 		   (!UseSelectiveBasePassOutputs() || !bSupportsStaticLighting);
 }
+
+// #nv begin DLAA
+class FVelocityResolvePS : public FGlobalShader
+{
+	DECLARE_SHADER_TYPE(FVelocityResolvePS, Global);	
+public:
+
+	static bool ShouldCompilePermutation(const FGlobalShaderPermutationParameters& Parameters)
+	{
+		return IsFeatureLevelSupported(Parameters.Platform, ERHIFeatureLevel::SM5);
+	}
+
+	FVelocityResolvePS(const ShaderMetaType::CompiledShaderInitializerType& Initializer) :
+		FGlobalShader(Initializer)
+	{
+		DepthTexture.Bind(Initializer.ParameterMap, TEXT("DepthTexture"));
+		VelocityTexture.Bind(Initializer.ParameterMap, TEXT("VelocityTexture"));
+	}
+	FVelocityResolvePS() {}
+
+	void SetParameters(FRHICommandList& RHICmdList, const FSceneView& View, FTexture2DRHIParamRef InDepthTexture, FTexture2DRHIParamRef InVelocityTexture)
+	{
+		FGlobalShader::SetParameters<FViewUniformShaderParameters>(RHICmdList, GetPixelShader(), View.ViewUniformBuffer);
+		FSceneRenderTargets& SceneContext = FSceneRenderTargets::Get(RHICmdList);
+
+		SetTextureParameter(RHICmdList, GetPixelShader(), DepthTexture, InDepthTexture);
+		SetTextureParameter(RHICmdList, GetPixelShader(), VelocityTexture, InVelocityTexture);
+	}
+
+	virtual bool Serialize(FArchive& Ar) override
+	{
+		bool bShaderHasOutdatedParameters = FGlobalShader::Serialize(Ar);
+
+		Ar << DepthTexture;
+		Ar << VelocityTexture;
+
+		return bShaderHasOutdatedParameters;
+	}
+
+	FShaderResourceParameter DepthTexture;
+	FShaderResourceParameter VelocityTexture;
+};
+
+IMPLEMENT_SHADER_TYPE(, FVelocityResolvePS, TEXT("/Engine/Private/VelocityResolve.usf"), TEXT("VelocityResolvePixelShader"), SF_Pixel);
+
+void FDeferredShadingSceneRenderer::ResolveVelocity(FRHICommandListImmediate& RHICmdList, IPooledRenderTarget* VelocityRT, TRefCountPtr<IPooledRenderTarget>& OutputTarget)
+{
+	FSceneRenderTargets& SceneContext = FSceneRenderTargets::Get(RHICmdList);
+	SCOPED_DRAW_EVENT(RHICmdList, NvDLAAVelocityFinish);
+	RHICmdList.TransitionResource(EResourceTransitionAccess::EReadable, SceneContext.GetSceneDepthTexture());
+	RHICmdList.TransitionResource(EResourceTransitionAccess::EReadable, VelocityRT->GetRenderTargetItem().ShaderResourceTexture);
+
+	FPooledRenderTargetDesc Desc = FVelocityRendering::GetRenderTargetDesc();
+	Desc.Format = PF_G32R32F;
+	GRenderTargetPool.FindFreeElement(RHICmdList, Desc, OutputTarget, TEXT("NvDLAAVelocityResolved"));
+
+	SetRenderTarget(RHICmdList, OutputTarget->GetRenderTargetItem().TargetableTexture, nullptr, ESimpleRenderTargetMode::EExistingColorAndDepth, FExclusiveDepthStencil::DepthNop_StencilNop, true);
+
+	FGraphicsPipelineStateInitializer GraphicsPSOInit;
+	RHICmdList.ApplyCachedRenderTargets(GraphicsPSOInit);
+	GraphicsPSOInit.BlendState = TStaticBlendState<CW_RGBA>::GetRHI();
+	GraphicsPSOInit.RasterizerState = TStaticRasterizerState<FM_Solid, CM_None>::GetRHI();
+	GraphicsPSOInit.DepthStencilState = TStaticDepthStencilState<false, CF_Always>::GetRHI();
+
+	extern TGlobalResource<FFilterVertexDeclaration> GFilterVertexDeclaration;
+	GraphicsPSOInit.BoundShaderState.VertexDeclarationRHI = GFilterVertexDeclaration.VertexDeclarationRHI;
+
+	for (int32 ViewIndex = 0; ViewIndex < Views.Num(); ViewIndex++)
+	{
+		const FViewInfo& View = Views[ViewIndex];
+		// Set shaders and texture
+		TShaderMapRef<FScreenVS> ScreenVertexShader(View.ShaderMap);
+		TShaderMapRef<FVelocityResolvePS> PixelShader(View.ShaderMap);
+
+		GraphicsPSOInit.BoundShaderState.VertexShaderRHI = GETSAFERHISHADER_VERTEX(*ScreenVertexShader);
+		GraphicsPSOInit.BoundShaderState.PixelShaderRHI = GETSAFERHISHADER_PIXEL(*PixelShader);
+		GraphicsPSOInit.PrimitiveType = PT_TriangleList;
+
+		SetGraphicsPipelineState(RHICmdList, GraphicsPSOInit);
+
+		PixelShader->SetParameters(
+			RHICmdList,
+			View,
+			SceneContext.SceneDepthZ->GetRenderTargetItem().ShaderResourceTexture->GetTexture2D(),
+			VelocityRT->GetRenderTargetItem().ShaderResourceTexture->GetTexture2D());
+
+		RHICmdList.SetViewport(View.ViewRect.Min.X, View.ViewRect.Min.Y, 0.0f, View.ViewRect.Min.X + View.ViewRect.Width(), View.ViewRect.Min.Y + View.ViewRect.Height(), 1.0f);
+
+		DrawRectangle(
+			RHICmdList,
+			0, 0,
+			1, 1,
+			0, 0,
+			1, 1,
+			FIntPoint(1, 1),
+			FIntPoint(1, 1),
+			*ScreenVertexShader,
+			EDRF_UseTriangleOptimization);
+	}
+}
+// #nv end DLAA

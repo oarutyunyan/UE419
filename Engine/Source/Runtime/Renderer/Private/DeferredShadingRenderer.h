@@ -461,6 +461,9 @@ private:
 
 	void CopySceneCaptureComponentToTarget(FRHICommandListImmediate& RHICmdList);
 
+	void ResolveVelocity(FRHICommandListImmediate& RHICmdList, IPooledRenderTarget* VelocityRT, TRefCountPtr<IPooledRenderTarget>& OutputTarget);
+	void ResolveDLAAFrame(FRHICommandListImmediate& RHICmdList, IPooledRenderTarget* InputRT, TRefCountPtr<IPooledRenderTarget>& OutputTarget, bool isHDR);
+
 	friend class FTranslucentPrimSet;
 };
 

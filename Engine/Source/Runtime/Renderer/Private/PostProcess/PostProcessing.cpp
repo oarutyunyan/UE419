@@ -54,6 +54,10 @@
 #include "PostProcess/PostProcessFFTBloom.h"
 #include "MobileSeparateTranslucencyPass.h"
 
+// #nv begin DLAA
+#include "DLAAParameters.h"
+// #nv end DLAA
+
 /** The global center for all post processing activities. */
 FPostProcessing GPostProcessing;
 
@@ -1476,7 +1480,9 @@ void FPostProcessing::Process(FRHICommandListImmediate& RHICmdList, const FViewI
 				&& View.FinalPostProcessSettings.DepthOfFieldMethod == DOFM_BokehDOF
 				&& !Context.View.Family->EngineShowFlags.VisualizeDOF;
 
-			if(bBokehDOF)
+			// #nv begin DLAA
+			if (bBokehDOF && !View.Family->DLAAParameters->bDisablePostEffectsForDLAA)
+			// #nv end DLAA
 			{
 				if (FPostProcessing::HasAlphaChannelSupport())
 				{
@@ -1532,7 +1538,9 @@ void FPostProcessing::Process(FRHICommandListImmediate& RHICmdList, const FViewI
 				SSRInputChain = AddPostProcessMaterialChain(Context, BL_SSRInput);
 			}
 
-			if(IsMotionBlurEnabled(View) && VelocityInput.IsValid() && !bVisualizeMotionBlur)
+			// #nv begin DLAA
+			if (IsMotionBlurEnabled(View) && VelocityInput.IsValid() && !bVisualizeMotionBlur && !View.Family->DLAAParameters->bDisablePostEffectsForDLAA)
+			// #nv end DLAA
 			{
 				// Motion blur
 
@@ -1661,7 +1669,9 @@ void FPostProcessing::Process(FRHICommandListImmediate& RHICmdList, const FViewI
 
 			// Compute DownSamples passes used by bloom, tint and eye-adaptation if possible.
 			FBloomDownSampleArray::Ptr BloomAndEyeDownSamplesPtr;
-			if (View.FinalPostProcessSettings.BloomIntensity > 0.f) // do bloom
+			// #nv begin DLAA
+			if (View.FinalPostProcessSettings.BloomIntensity > 0.f && !View.Family->DLAAParameters->bDisablePostEffectsForDLAA) // do bloom
+			// #nv end DLAA
 			{
 				// No Threshold:  We can share with Eye-Adaptation.
 				if (Context.View.FinalPostProcessSettings.BloomThreshold <= -1 && Context.View.Family->Views.Num() == 1)
@@ -1703,7 +1713,9 @@ void FPostProcessing::Process(FRHICommandListImmediate& RHICmdList, const FViewI
 				}
 			}
 
-			if(View.FinalPostProcessSettings.BloomIntensity > 0.0f)
+			// #nv begin DLAA
+			if (View.FinalPostProcessSettings.BloomIntensity > 0.0f && !View.Family->DLAAParameters->bDisablePostEffectsForDLAA)
+			// #nv end DLAA
 			{
 				if (CVarUseMobileBloom.GetValueOnRenderThread() == 0)
 				{
@@ -2147,6 +2159,9 @@ void FPostProcessing::Process(FRHICommandListImmediate& RHICmdList, const FViewI
 			Desc.DebugName = TEXT("FinalPostProcessColor");
 
 			GRenderTargetPool.CreateUntrackedElement(Desc, Temp, Item);
+			// #nv begin DLAA
+			Temp->SetDebugName(TEXT("NvDLAATargetFrame"));
+			// #nv end DLAA
 
 			OverrideRenderTarget(Context.FinalOutput, Temp, Desc);
 
@@ -2177,6 +2192,10 @@ void FPostProcessing::Process(FRHICommandListImmediate& RHICmdList, const FViewI
 				check(ViewState);
 				ViewState->PendingPrevFrameViewInfo.CustomSSRInput = SSRInputChain.GetOutput()->PooledRenderTarget;
 			}
+
+#ifdef DLAA
+			View.Family->DLAAParameters->DLAATempRT = Temp;
+#endif
 		}
 	}
 
