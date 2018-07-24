@@ -6,13 +6,12 @@
 
 Texture2D InTexture;
 SamplerState InTextureSampler;
-float Gamma;
 
 void DLAACopyTexturePixelShader(
 	FScreenVertexOutput Input,
 	out float4 OutColor : SV_Target0
 	)
 {
-	// Copy texture and apply gamma
-	OutColor = float4( pow(InTexture.Load(Input.Position.xyz).rgb, Gamma), 1.0);
+	// Copy texture
+	OutColor = float4(InTexture.Load(Input.Position.xyz).rgb, 1.0);
 }

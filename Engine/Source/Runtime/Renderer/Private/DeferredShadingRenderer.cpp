@@ -1710,20 +1710,17 @@ public:
 	{
 		InTexture.Bind(Initializer.ParameterMap, TEXT("InTexture"));
 		InTextureSampler.Bind(Initializer.ParameterMap, TEXT("InTextureSampler"));
-		Gamma.Bind(Initializer.ParameterMap, TEXT("Gamma"));
 	}
 	FDLAACopyTexturePS() {}
 
-	void SetParameters(FRHICommandList& RHICmdList, const FTexture* Texture, float gamma)
+	void SetParameters(FRHICommandList& RHICmdList, const FTexture* Texture)
 	{
 		SetTextureParameter(RHICmdList, GetPixelShader(), InTexture, InTextureSampler, Texture);
-		SetShaderValue(RHICmdList, GetPixelShader(), Gamma, gamma);
 	}
 
-	void SetParameters(FRHICommandList& RHICmdList, FSamplerStateRHIParamRef SamplerStateRHI, FTextureRHIParamRef TextureRHI, float gamma)
+	void SetParameters(FRHICommandList& RHICmdList, FSamplerStateRHIParamRef SamplerStateRHI, FTextureRHIParamRef TextureRHI)
 	{
 		SetTextureParameter(RHICmdList, GetPixelShader(), InTexture, InTextureSampler, SamplerStateRHI, TextureRHI);
-		SetShaderValue(RHICmdList, GetPixelShader(), Gamma, gamma);
 	}
 
 	virtual bool Serialize(FArchive& Ar) override
@@ -1732,14 +1729,12 @@ public:
 		
 		Ar << InTexture;
 		Ar << InTextureSampler;
-		Ar << Gamma;
 
 		return bShaderHasOutdatedParameters;
 	}
 
 	FShaderResourceParameter InTexture;
 	FShaderResourceParameter InTextureSampler;
-	FShaderParameter Gamma;
 };
 
 IMPLEMENT_SHADER_TYPE(, FDLAACopyTexturePS, TEXT("/Engine/Private/DLAACopyTexture.usf"), TEXT("DLAACopyTexturePixelShader"), SF_Pixel);
@@ -1788,7 +1783,7 @@ void FDeferredShadingSceneRenderer::ResolveDLAAFrame(FRHICommandListImmediate& R
 
 	SetGraphicsPipelineState(RHICmdList, GraphicsPSOInit);
 	
-	PixelShader->SetParameters(RHICmdList, TStaticSamplerState<SF_Point>::GetRHI(), InputRT->GetRenderTargetItem().ShaderResourceTexture, 1.0);
+	PixelShader->SetParameters(RHICmdList, TStaticSamplerState<SF_Point>::GetRHI(), InputRT->GetRenderTargetItem().ShaderResourceTexture);
 
 	const uint32 ViewportWidth = InputRT->GetRenderTargetItem().ShaderResourceTexture->GetTexture2D()->GetSizeX();
 	const uint32 ViewportHeight = InputRT->GetRenderTargetItem().ShaderResourceTexture->GetTexture2D()->GetSizeY();
