@@ -1751,13 +1751,11 @@ void FDeferredShadingSceneRenderer::ResolveDLAAFrame(FRHICommandListImmediate& R
 	if (isHDR)
 	{
 		Desc.Format = PF_A32B32G32R32F;
-		SCOPED_DRAW_EVENT(RHICmdList, NvDLAAHDRFrameReady);
 		GRenderTargetPool.FindFreeElement(RHICmdList, Desc, OutputTarget, TEXT("NvDLAAHDRFrame"));
 	}		
 	else
 	{
 		Desc.Format = PF_FloatRGBA;
-		SCOPED_DRAW_EVENT(RHICmdList, NvDLAALDRFrameReady);
 		GRenderTargetPool.FindFreeElement(RHICmdList, Desc, OutputTarget, TEXT("NvDLAALDRFrame"));
 	}	
 
@@ -1798,5 +1796,14 @@ void FDeferredShadingSceneRenderer::ResolveDLAAFrame(FRHICommandListImmediate& R
 		FIntPoint(1, 1),
 		*VertexShader,
 		EDRF_UseTriangleOptimization);
+
+	if (isHDR)
+	{
+		SCOPED_DRAW_EVENT(RHICmdList, NvDLAAHDRFrameReady);
+	}
+	else
+	{
+		SCOPED_DRAW_EVENT(RHICmdList, NvDLAALDRFrameReady);
+	}
 }
 // #nv end DLAA

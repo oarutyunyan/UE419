@@ -1011,8 +1011,7 @@ IMPLEMENT_SHADER_TYPE(, FVelocityResolvePS, TEXT("/Engine/Private/VelocityResolv
 
 void FDeferredShadingSceneRenderer::ResolveVelocity(FRHICommandListImmediate& RHICmdList, IPooledRenderTarget* VelocityRT, TRefCountPtr<IPooledRenderTarget>& OutputTarget)
 {
-	FSceneRenderTargets& SceneContext = FSceneRenderTargets::Get(RHICmdList);
-	SCOPED_DRAW_EVENT(RHICmdList, NvDLAAVelocityFinish);
+	FSceneRenderTargets& SceneContext = FSceneRenderTargets::Get(RHICmdList);	
 	RHICmdList.TransitionResource(EResourceTransitionAccess::EReadable, SceneContext.GetSceneDepthTexture());
 	RHICmdList.TransitionResource(EResourceTransitionAccess::EReadable, VelocityRT->GetRenderTargetItem().ShaderResourceTexture);
 
@@ -1062,6 +1061,10 @@ void FDeferredShadingSceneRenderer::ResolveVelocity(FRHICommandListImmediate& RH
 			FIntPoint(1, 1),
 			*ScreenVertexShader,
 			EDRF_UseTriangleOptimization);
+	}
+	
+	{
+		SCOPED_DRAW_EVENT(RHICmdList, NvDLAAVelocityFinish);
 	}
 }
 // #nv end DLAA
